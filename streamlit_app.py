@@ -209,7 +209,7 @@ if (not st.session_state["role_locked"]) and user_role and (user_role != st.sess
 # ----------------------------
 # Manual save button (optional)
 # ----------------------------
-if st.sidebar.button("Save Conversation"):
+if st.sidebar.button("End Conversation"):
     saved_file, save_error = save_conversation_to_gcp(messages, selected_mode, user_pid.strip(), st.session_state["selected_role"])
     if save_error == "missing_required_fields":
         st.sidebar.error("Enter Study ID / Team ID and select a Role first.")
