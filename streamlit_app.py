@@ -11,6 +11,9 @@ from google.oauth2.service_account import Credentials
 from models import MODEL_CONFIGS
 from utils.utils import response_generator
 
+# ----------------------------
+# Page config
+# ----------------------------
 st.set_page_config(
     page_title="Beer Game Assistant",
     page_icon=None,
@@ -22,14 +25,17 @@ MODEL_SELECTED = "gpt-5-mini"
 FALLBACK_MODEL = "gpt-4o-mini"
 
 st.title("Beer Game Assistant")
-st.write(
-    "Ask strategy and concept questions for your Beer Game role."
-)
+st.write("Ask strategy and concept questions for your Beer Game role.")
 
+# ----------------------------
+# OpenAI client
+# ----------------------------
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 openai_client = OpenAI(api_key=openai_api_key)
 
-# Initializing GCP credentials and bucket details
+# ----------------------------
+# GCP setup
+# ----------------------------
 credentials_dict = {
     "type": st.secrets.gcs["type"],
     "project_id": st.secrets.gcs.get("project_id"),
@@ -37,7 +43,6 @@ credentials_dict = {
     "client_email": st.secrets.gcs["client_email"],
     "private_key": st.secrets.gcs["private_key"],
     "private_key_id": st.secrets.gcs["private_key_id"],
-    # Required by google-auth; default value works for standard service accounts.
     "token_uri": st.secrets.gcs.get("token_uri", "https://oauth2.googleapis.com/token"),
 }
 credentials_dict["private_key"] = credentials_dict["private_key"].replace("\\n", "\n")
@@ -50,33 +55,62 @@ except Exception as exc:
     st.error(f"GCP setup failed: {exc}")
     st.stop()
 
-user_pid = st.sidebar.text_input("Study ID / Team ID")
-user_role = st.sidebar.text_input("Role")
-selected_mode = "BeerGameQuantitative"
-system_prompt = MODEL_CONFIGS[selected_mode]["prompt"]
-autosave_enabled = st.sidebar.checkbox("Autosave", value=True)
-
+# ----------------------------
+# Session state init
+# ----------------------------
 if "start_time" not in st.session_state:
     st.session_state["start_time"] = datetime.now()
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
-        {
-            "role": "assistant",
-            "content": (
-                "Hello, I am your Beer Game coach."
-            ),
-        }
+        {"role": "assistant", "content": "Hello, I am your Beer Game coach."}
     ]
+
+if "selected_role" not in st.session_state:
+    st.session_state["selected_role"] = ""
+
+if "welcome_role" not in st.session_state:
+    st.session_state["welcome_role"] = ""
+
+# Lock role after the first USER message is sent
+if "role_locked" not in st.session_state:
+    st.session_state["role_locked"] = False
 
 messages = st.session_state["messages"]
 
+# ----------------------------
+# Sidebar inputs (PID first, then role)
+# ----------------------------
+user_pid = st.sidebar.text_input("Study ID / Team ID")
 
-def sanitize_for_filename(value):
+ROLE_OPTIONS = ["Retailer", "Wholesaler", "Distributor", "Factory"]
+
+role_disabled = (not bool(user_pid.strip())) or st.session_state["role_locked"]
+
+# Selectbox index should reflect previously selected role when possible
+role_index = 0
+if st.session_state["selected_role"] in ROLE_OPTIONS:
+    role_index = ROLE_OPTIONS.index(st.session_state["selected_role"])
+
+user_role = st.sidebar.selectbox(
+    "Role",
+    ROLE_OPTIONS,
+    index=role_index,
+    disabled=role_disabled,
+    help="Enter Study ID first. Role will lock after your first message.",
+)
+
+selected_mode = "BeerGameQuantitative"
+system_prompt = MODEL_CONFIGS[selected_mode]["prompt"]
+
+# ----------------------------
+# Helpers
+# ----------------------------
+def sanitize_for_filename(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value.strip())
 
 
-def build_system_prompt(base_prompt, role):
+def build_system_prompt(base_prompt: str, role: str) -> str:
     role_text = role.strip() if role else ""
     if not role_text:
         return base_prompt
@@ -87,7 +121,7 @@ def build_system_prompt(base_prompt, role):
     )
 
 
-def build_welcome_message(role):
+def build_welcome_message(role: str) -> str:
     role_text = role.strip()
     return (
         f"You are the '{role_text}'. I will help you with making decisions. "
@@ -95,7 +129,7 @@ def build_welcome_message(role):
     )
 
 
-def generate_assistant_text(messages_to_send, system_text):
+def generate_assistant_text(messages_to_send, system_text: str) -> str:
     response_input = [{"role": "system", "content": system_text}]
     response_input.extend(
         {"role": msg["role"], "content": msg["content"]}
@@ -109,7 +143,7 @@ def generate_assistant_text(messages_to_send, system_text):
             input=response_input,
         )
         return response.output_text
-    except BadRequestError as exc:
+    except BadRequestError:
         st.sidebar.warning(
             f"Model '{MODEL_SELECTED}' failed for this request. Retrying with '{FALLBACK_MODEL}'."
         )
@@ -122,7 +156,7 @@ def generate_assistant_text(messages_to_send, system_text):
         raise RuntimeError(f"Assistant request failed: {exc}") from exc
 
 
-def save_conversation_to_gcp(messages_to_save, mode_key, pid, role):
+def save_conversation_to_gcp(messages_to_save, mode_key: str, pid: str, role: str):
     if not pid or not role:
         return None, "missing_required_fields"
     try:
@@ -144,50 +178,75 @@ def save_conversation_to_gcp(messages_to_save, mode_key, pid, role):
 
         created_files_path = f"conv_history_P{pid}"
         os.makedirs(created_files_path, exist_ok=True)
+
         safe_pid = sanitize_for_filename(pid)
         safe_role = sanitize_for_filename(role)
+
         file_name = f"beergame_quantitative_P{safe_pid}_{safe_role}.csv"
         local_path = os.path.join(created_files_path, file_name)
 
         chat_history_df.to_csv(local_path, index=False)
         blob = bucket.blob(file_name)
         blob.upload_from_filename(local_path)
+
         shutil.rmtree(created_files_path, ignore_errors=True)
         return file_name, None
     except Exception as exc:
         return None, str(exc)
 
-if user_role.strip() and st.session_state.get("welcome_role") != user_role.strip():
+# ----------------------------
+# Role selection behavior:
+# - Only reset messages when role changes AND role is not locked
+# - Once locked, role cannot be changed (selectbox disabled)
+# ----------------------------
+if (not st.session_state["role_locked"]) and user_role and (user_role != st.session_state["selected_role"]):
+    st.session_state["selected_role"] = user_role
     st.session_state["messages"] = [{"role": "assistant", "content": build_welcome_message(user_role)}]
-    st.session_state["welcome_role"] = user_role.strip()
-    messages = st.session_state["messages"]
+    st.session_state["welcome_role"] = user_role
     st.session_state["start_time"] = datetime.now()
+    messages = st.session_state["messages"]
 
+# ----------------------------
+# Manual save button (optional)
+# ----------------------------
 if st.sidebar.button("Save Conversation"):
-    saved_file, save_error = save_conversation_to_gcp(messages, selected_mode, user_pid, user_role)
+    saved_file, save_error = save_conversation_to_gcp(messages, selected_mode, user_pid.strip(), st.session_state["selected_role"])
     if save_error == "missing_required_fields":
-        st.sidebar.error("Enter Study ID / Team ID and Role first.")
+        st.sidebar.error("Enter Study ID / Team ID and select a Role first.")
     elif save_error:
         st.sidebar.error(f"Save failed: {save_error}")
     else:
         st.sidebar.success(f"Saved to GCP bucket as {saved_file}")
 
-for message in messages:
+# ----------------------------
+# Render chat history
+# ----------------------------
+for message in st.session_state["messages"]:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-chat_enabled = bool(user_pid.strip()) and bool(user_role.strip())
+# Require PID + role before chatting
+chat_enabled = bool(user_pid.strip()) and bool(st.session_state["selected_role"].strip())
 if not chat_enabled:
-    st.info("Enter Study ID / Team ID and Role in the sidebar to start chatting.")
+    st.info("Enter Study ID / Team ID and select a Role in the sidebar to start chatting.")
 
+# ----------------------------
+# Chat input -> assistant -> autosave ALWAYS
+# Also: lock role after the first user message
+# ----------------------------
 if user_input := st.chat_input("Ask a Beer Game question...", disabled=not chat_enabled):
-    messages.append({"role": "user", "content": user_input})
+    # Append user message
+    st.session_state["messages"].append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
+    # Lock role after first user message (now that they started chatting)
+    st.session_state["role_locked"] = True
+
+    # Generate assistant response
     try:
-        role_aware_prompt = build_system_prompt(system_prompt, user_role)
-        assistant_text = generate_assistant_text(messages, role_aware_prompt)
+        role_aware_prompt = build_system_prompt(system_prompt, st.session_state["selected_role"])
+        assistant_text = generate_assistant_text(st.session_state["messages"], role_aware_prompt)
     except Exception as exc:
         st.error(str(exc))
         st.stop()
@@ -195,13 +254,18 @@ if user_input := st.chat_input("Ask a Beer Game question...", disabled=not chat_
     with st.chat_message("assistant"):
         st.write_stream(response_generator(response=assistant_text))
 
-    messages.append({"role": "assistant", "content": assistant_text})
+    st.session_state["messages"].append({"role": "assistant", "content": assistant_text})
 
-    if autosave_enabled:
-        saved_file, save_error = save_conversation_to_gcp(messages, selected_mode, user_pid, user_role)
-        if save_error == "missing_required_fields":
-            st.sidebar.warning("Autosave is on. Enter Study ID / Team ID and Role to enable uploads.")
-        elif save_error:
-            st.sidebar.error(f"Autosave failed: {save_error}")
-        else:
-            st.sidebar.caption(f"Autosaved: {saved_file}")
+    # Autosave ALWAYS
+    saved_file, save_error = save_conversation_to_gcp(
+        st.session_state["messages"],
+        selected_mode,
+        user_pid.strip(),
+        st.session_state["selected_role"].strip(),
+    )
+    if save_error == "missing_required_fields":
+        st.sidebar.warning("Enter Study ID / Team ID and select a Role to enable uploads.")
+    elif save_error:
+        st.sidebar.error(f"Autosave failed: {save_error}")
+    else:
+        st.sidebar.caption(f"Autosaved: {saved_file}")
