@@ -52,7 +52,7 @@ except Exception as exc:
 
 user_pid = st.sidebar.text_input("Study ID / Team ID")
 user_role = st.sidebar.text_input("Role")
-selected_mode = "BeerGameQualitative"
+selected_mode = "BeerGameQuantitative"
 system_prompt = MODEL_CONFIGS[selected_mode]["prompt"]
 autosave_enabled = st.sidebar.checkbox("Autosave", value=True)
 
@@ -146,7 +146,7 @@ def save_conversation_to_gcp(messages_to_save, mode_key, pid, role):
         os.makedirs(created_files_path, exist_ok=True)
         safe_pid = sanitize_for_filename(pid)
         safe_role = sanitize_for_filename(role)
-        file_name = f"beergame_qualitative_P{safe_pid}_{safe_role}.csv"
+        file_name = f"beergame_quantitative_P{safe_pid}_{safe_role}.csv"
         local_path = os.path.join(created_files_path, file_name)
 
         chat_history_df.to_csv(local_path, index=False)
