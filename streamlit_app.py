@@ -66,6 +66,9 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "Hello, I am your Beer Game coach."}
     ]
 
+if "selected_section" not in st.session_state:
+    st.session_state["selected_section"] = "OPMGT 301 A"
+
 if "selected_role" not in st.session_state:
     st.session_state["selected_role"] = ""
 
@@ -79,9 +82,23 @@ if "role_locked" not in st.session_state:
 messages = st.session_state["messages"]
 
 # ----------------------------
-# Sidebar inputs (PID first, then role)
+# Sidebar inputs (Section -> PID -> Role)
 # ----------------------------
-user_pid = st.sidebar.text_input("Study ID / Team ID")
+SECTION_OPTIONS = ["OPMGT 301 A", "OPMGT 301 B", "OPMGT 301 C"]
+
+section_index = 0
+if st.session_state["selected_section"] in SECTION_OPTIONS:
+    section_index = SECTION_OPTIONS.index(st.session_state["selected_section"])
+
+user_section = st.sidebar.selectbox(
+    "Section",
+    SECTION_OPTIONS,
+    index=section_index,
+    help="Select your class section.",
+)
+st.session_state["selected_section"] = user_section
+
+user_pid = st.sidebar.text_input("Canvas Group Number")
 
 ROLE_OPTIONS = ["Retailer", "Wholesaler", "Distributor", "Factory"]
 
@@ -97,7 +114,7 @@ user_role = st.sidebar.selectbox(
     ROLE_OPTIONS,
     index=role_index,
     disabled=role_disabled,
-    help="Enter Study ID first. Role will lock after your first message.",
+    help="Enter Canvas Group Number first. Role will lock after your first message.",
 )
 
 selected_mode = "BeerGameQuantitative"
@@ -156,8 +173,8 @@ def generate_assistant_text(messages_to_send, system_text: str) -> str:
         raise RuntimeError(f"Assistant request failed: {exc}") from exc
 
 
-def save_conversation_to_gcp(messages_to_save, mode_key: str, pid: str, role: str):
-    if not pid or not role:
+def save_conversation_to_gcp(messages_to_save, mode_key: str, pid: str, role: str, section: str):
+    if not pid or not role or not section:
         return None, "missing_required_fields"
     try:
         end_time = datetime.now()
@@ -168,6 +185,7 @@ def save_conversation_to_gcp(messages_to_save, mode_key: str, pid: str, role: st
         metadata_rows = pd.DataFrame(
             [
                 {"role": "Mode", "content": mode_key},
+                {"role": "Section", "content": section},
                 {"role": "Participant Role", "content": role},
                 {"role": "Start Time", "content": start_time},
                 {"role": "End Time", "content": end_time},
@@ -181,8 +199,9 @@ def save_conversation_to_gcp(messages_to_save, mode_key: str, pid: str, role: st
 
         safe_pid = sanitize_for_filename(pid)
         safe_role = sanitize_for_filename(role)
+        safe_section = sanitize_for_filename(section)
 
-        file_name = f"beergame_quantitative_P{safe_pid}_{safe_role}.csv"
+        file_name = f"beergame_quantitative_{safe_section}_P{safe_pid}_{safe_role}.csv"
         local_path = os.path.join(created_files_path, file_name)
 
         chat_history_df.to_csv(local_path, index=False)
@@ -210,9 +229,15 @@ if (not st.session_state["role_locked"]) and user_role and (user_role != st.sess
 # Manual save button (optional)
 # ----------------------------
 if st.sidebar.button("End Conversation"):
-    saved_file, save_error = save_conversation_to_gcp(messages, selected_mode, user_pid.strip(), st.session_state["selected_role"])
+    saved_file, save_error = save_conversation_to_gcp(
+        messages,
+        selected_mode,
+        user_pid.strip(),
+        st.session_state["selected_role"].strip(),
+        st.session_state["selected_section"].strip(),
+    )
     if save_error == "missing_required_fields":
-        st.sidebar.error("Enter Study ID / Team ID and select a Role first.")
+        st.sidebar.error("Select Section, enter Canvas Group Number, and select a Role first.")
     elif save_error:
         st.sidebar.error(f"Save failed: {save_error}")
     else:
@@ -225,10 +250,14 @@ for message in st.session_state["messages"]:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Require PID + role before chatting
-chat_enabled = bool(user_pid.strip()) and bool(st.session_state["selected_role"].strip())
+# Require Section + PID + role before chatting
+chat_enabled = (
+    bool(st.session_state["selected_section"].strip())
+    and bool(user_pid.strip())
+    and bool(st.session_state["selected_role"].strip())
+)
 if not chat_enabled:
-    st.info("Enter Study ID / Team ID and select a Role in the sidebar to start chatting.")
+    st.info("Select a Section, enter Canvas Group Number, and select a Role in the sidebar to start chatting.")
 
 # ----------------------------
 # Chat input -> assistant -> autosave ALWAYS
@@ -262,9 +291,10 @@ if user_input := st.chat_input("Ask a Beer Game question...", disabled=not chat_
         selected_mode,
         user_pid.strip(),
         st.session_state["selected_role"].strip(),
+        st.session_state["selected_section"].strip(),
     )
     if save_error == "missing_required_fields":
-        st.sidebar.warning("Enter Study ID / Team ID and select a Role to enable uploads.")
+        st.sidebar.warning("Select Section, enter Canvas Group Number, and select a Role to enable uploads.")
     elif save_error:
         st.sidebar.error(f"Autosave failed: {save_error}")
     else:
