@@ -84,6 +84,10 @@ messages = st.session_state["messages"]
 # ----------------------------
 # Sidebar inputs (Section -> PID -> Role)
 # ----------------------------
+
+st.sidebar.markdown("### Instruction")
+st.sidebar.info("When you use the chatbot, ...")
+
 SECTION_OPTIONS = ["OPMGT 301 A", "OPMGT 301 B", "OPMGT 301 C"]
 
 section_index = 0
