@@ -208,10 +208,8 @@ def validate_structured_response(payload: dict) -> dict:
 
 def build_user_visible_reply(payload: dict) -> str:
     return (
-        f"**Short quantitative reasoning:** {payload['short_quantitative_reasoning']}\n\n"
-        f"**Short qualitative reasoning:** {payload['short_qualitative_reasoning']}\n\n"
-        f"**Quantitative answer:** {payload['quantitative_answer']}\n\n"
-        f"**Qualitative answer:** {payload['qualitative_answer']}"
+        f"**Order Logic:** {payload['short_quantitative_reasoning']}\n\n"
+        f"**Recommended Order:** {payload['quantitative_answer']}\n\n"
     )
 
 
