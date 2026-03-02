@@ -67,7 +67,7 @@ credentials_dict["private_key"] = credentials_dict["private_key"].replace("\\n",
 try:
     credentials = Credentials.from_service_account_info(credentials_dict)
     client = storage.Client(credentials=credentials, project="beer-game-488600")
-    bucket = client.get_bucket("beergame2")
+    bucket = client.get_bucket("beergame1")
 except Exception as exc:
     st.error(f"GCP setup failed: {exc}")
     st.stop()
@@ -235,7 +235,6 @@ def save_conversation_to_gcp(messages_to_save, mode_key: str, pid: str, role: st
         return None, "missing_required_fields"
     try:
         end_time = datetime.now()
-        end_time_str = end_time.strftime("%Y%m%d_%H%M%S")
         start_time = st.session_state["start_time"]
         duration = end_time - start_time
 
@@ -259,7 +258,7 @@ def save_conversation_to_gcp(messages_to_save, mode_key: str, pid: str, role: st
         safe_role = sanitize_for_filename(role)
         safe_section = sanitize_for_filename(section)
 
-        file_name = f"beergame_quantitative_{safe_section}_P{safe_pid}_{safe_role}_{end_time_str}.csv"
+        file_name = f"beergame_quantitative_{safe_section}_P{safe_pid}_{safe_role}.csv"
         local_path = os.path.join(created_files_path, file_name)
 
         chat_history_df.to_csv(local_path, index=False)
