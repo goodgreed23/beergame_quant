@@ -291,7 +291,7 @@ def save_structured_response_to_gcp(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         file_name = (
-            f"beergame_quantitative_structured_{safe_section}_P{safe_pid}_{safe_role}_{timestamp}.json"
+            f"beergame_quantitative_structured_{safe_section}_P{safe_pid}_{safe_role}.json"
         )
         local_path = os.path.join(created_files_path, file_name)
 
