@@ -13,7 +13,7 @@ GAME FACTS (course setting)
 - Physical shipping delays: 2 weeks on all links, EXCEPT Plant/Brewery → Factory is 1 week
 - Information delays: 2 weeks on all links, EXCEPT Factory → Plant/Brewery is 1 week
 - Starting inventory: 12 cases for each role
-- There is a steady demand of 4 cases each week, so the pipeline is fully loaded with 4 cases at every stage.
+
 
 RULES (always)
 - Do not suggest coordinating or messaging other roles.
