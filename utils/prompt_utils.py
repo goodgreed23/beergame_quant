@@ -53,7 +53,7 @@ QUANTITATIVE_OUTPUT_INSTRUCTION = (
 QUALITATIVE_OUTPUT_INSTRUCTION = (
     "For qualitative fields: qualitative_reasoning must avoid equations and express the same logic in plain language. "
     "qualitative_answer must convey the same recommendation direction as quantitative_answer but must not include digits. "
-    "short_quantitative_reasoning and short_qualitative_reasoning are required and should each be concise (1-2 sentences)."
+    "short_quantitative_reasoning and short_qualitative_reasoning are required and should each be concise (maximum 3 sentences)."
 )
 
 FACTORY_QUALITATIVE_MODE_EXAMPLE = """
