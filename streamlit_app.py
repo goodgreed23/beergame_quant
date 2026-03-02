@@ -212,7 +212,7 @@ def generate_assistant_payload(messages_to_send, system_text: str, mode_key: str
         response = openai_client.responses.create(
             model=MODEL_SELECTED,
             input=response_input,
-            reasoning={"effort": "minimal"},
+            reasoning={"effort": "medium"},
         )
         payload = extract_first_json_object(response.output_text)
         return validate_structured_response(payload)
