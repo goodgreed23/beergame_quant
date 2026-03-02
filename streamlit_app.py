@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import os
 import shutil
-import json
-import re
 from datetime import datetime
 from openai import OpenAI, BadRequestError
 
@@ -11,7 +9,6 @@ from google.cloud import storage
 from google.oauth2.service_account import Credentials
 
 from models import MODEL_CONFIGS
-from utils.prompt_utils import build_structured_output_instruction
 from utils.utils import response_generator
 
 # ----------------------------
@@ -82,15 +79,6 @@ ROLE_OPTIONS = [ROLE_PLACEHOLDER, "Retailer", "Wholesaler", "Distributor", "Fact
 selected_mode = "BeerGameQuantitative"
 system_prompt = MODEL_CONFIGS[selected_mode]["prompt"]
 
-STRUCTURED_RESPONSE_KEYS = [
-    "quantitative_reasoning",
-    "qualitative_reasoning",
-    "short_quantitative_reasoning",
-    "short_qualitative_reasoning",
-    "quantitative_answer",
-    "qualitative_answer",
-]
-
 # ----------------------------
 # Session state init
 # ----------------------------
@@ -146,62 +134,13 @@ def build_welcome_message(role: str) -> str:
     )
 
 
-def extract_first_json_object(raw_text: str) -> dict:
-    try:
-        parsed = json.loads(raw_text)
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-
-    first_brace = raw_text.find("{")
-    last_brace = raw_text.rfind("}")
-    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-        candidate = raw_text[first_brace : last_brace + 1]
-        parsed = json.loads(candidate)
-        if isinstance(parsed, dict):
-            return parsed
-
-    raise ValueError("Model response was not valid JSON.")
-
-
-def validate_structured_response(payload: dict) -> dict:
-    clean_payload = {}
-    for key in STRUCTURED_RESPONSE_KEYS:
-        value = payload.get(key, "")
-        clean_payload[key] = str(value).strip()
-
-    if not clean_payload["short_quantitative_reasoning"]:
-        clean_payload["short_quantitative_reasoning"] = clean_payload[
-            "quantitative_reasoning"
-        ][:240].strip()
-
-    if not clean_payload["short_qualitative_reasoning"]:
-        clean_payload["short_qualitative_reasoning"] = clean_payload[
-            "qualitative_reasoning"
-        ][:240].strip()
-
-    if not re.fullmatch(r"-?\d+", clean_payload["quantitative_answer"]):
-        raise ValueError("quantitative_answer must be a single exact integer with no extra text.")
-
-    if re.search(r"\d", clean_payload["qualitative_answer"]):
-        raise ValueError("qualitative_answer must be directional only and must not include exact numbers.")
-
-    return clean_payload
-
-
-def build_user_visible_reply(payload: dict) -> str:
-    return (
-        f"**Order Logic:** {payload['short_quantitative_reasoning']}\n\n"
-        f"**Recommended Order:** {payload['quantitative_answer']}"
-    )
-
-
-def generate_assistant_payload(messages_to_send, system_text: str, mode_key: str) -> dict:
-    structured_output_instruction = build_structured_output_instruction(mode_key)
-
+def generate_assistant_text(messages_to_send, system_text: str) -> str:
+    """
+    Plain, non-JSON call:
+    - system message includes your base + role guidance
+    - then we send the running chat history (user/assistant)
+    """
     response_input = [{"role": "system", "content": system_text}]
-    response_input.append({"role": "system", "content": structured_output_instruction})
     response_input.extend(
         {"role": msg["role"], "content": msg["content"]}
         for msg in messages_to_send
@@ -214,8 +153,10 @@ def generate_assistant_payload(messages_to_send, system_text: str, mode_key: str
             input=response_input,
             reasoning={"effort": "medium"},
         )
-        payload = extract_first_json_object(response.output_text)
-        return validate_structured_response(payload)
+        text = (response.output_text or "").strip()
+        if not text:
+            raise RuntimeError("Empty response from model.")
+        return text
     except BadRequestError:
         st.sidebar.warning(
             f"Model '{MODEL_SELECTED}' failed for this request. Retrying with '{FALLBACK_MODEL}'."
@@ -224,8 +165,10 @@ def generate_assistant_payload(messages_to_send, system_text: str, mode_key: str
             model=FALLBACK_MODEL,
             input=response_input,
         )
-        payload = extract_first_json_object(fallback_response.output_text)
-        return validate_structured_response(payload)
+        text = (fallback_response.output_text or "").strip()
+        if not text:
+            raise RuntimeError("Empty response from fallback model.")
+        return text
     except Exception as exc:
         raise RuntimeError(f"Assistant request failed: {exc}") from exc
 
@@ -270,51 +213,6 @@ def save_conversation_to_gcp(messages_to_save, mode_key: str, pid: str, role: st
     except Exception as exc:
         return None, str(exc)
 
-
-def save_structured_response_to_gcp(
-    structured_payload: dict,
-    mode_key: str,
-    pid: str,
-    role: str,
-    section: str,
-    user_input: str,
-):
-    if not pid or not role or not section or role == ROLE_PLACEHOLDER:
-        return None, "missing_required_fields"
-    try:
-        created_files_path = f"structured_output_P{sanitize_for_filename(pid)}"
-        os.makedirs(created_files_path, exist_ok=True)
-
-        safe_pid = sanitize_for_filename(pid)
-        safe_role = sanitize_for_filename(role)
-        safe_section = sanitize_for_filename(section)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        file_name = (
-            f"beergame_quantitative_structured_{safe_section}_P{safe_pid}_{safe_role}.json"
-        )
-        local_path = os.path.join(created_files_path, file_name)
-
-        payload_to_save = {
-            "mode": mode_key,
-            "section": section,
-            "pid": pid,
-            "role": role,
-            "timestamp": datetime.now().isoformat(),
-            "user_input": user_input,
-            "assistant_output": structured_payload,
-        }
-        with open(local_path, "w", encoding="utf-8") as f:
-            json.dump(payload_to_save, f, indent=2, ensure_ascii=False)
-
-        blob = bucket.blob(file_name)
-        blob.upload_from_filename(local_path)
-
-        shutil.rmtree(created_files_path, ignore_errors=True)
-        return file_name, None
-    except Exception as exc:
-        return None, str(exc)
-
 # ----------------------------
 # Sidebar inputs (Section -> PID -> Role)
 # ----------------------------
@@ -332,7 +230,11 @@ When you use the Beer Game Assistant, keep the following in mind:
 )
 
 # Section
-section_index = SECTION_OPTIONS.index(st.session_state["selected_section"]) if st.session_state["selected_section"] in SECTION_OPTIONS else 0
+section_index = (
+    SECTION_OPTIONS.index(st.session_state["selected_section"])
+    if st.session_state["selected_section"] in SECTION_OPTIONS
+    else 0
+)
 st.sidebar.selectbox(
     "Section",
     SECTION_OPTIONS,
@@ -347,7 +249,11 @@ st.sidebar.text_input("Canvas Group Number", key="pid")
 # Role (requires PID; locks after first message)
 role_disabled = (not bool(st.session_state["pid"].strip())) or st.session_state["role_locked"]
 
-role_index = ROLE_OPTIONS.index(st.session_state["selected_role"]) if st.session_state["selected_role"] in ROLE_OPTIONS else 0
+role_index = (
+    ROLE_OPTIONS.index(st.session_state["selected_role"])
+    if st.session_state["selected_role"] in ROLE_OPTIONS
+    else 0
+)
 st.sidebar.selectbox(
     "Role",
     ROLE_OPTIONS,
@@ -409,7 +315,7 @@ if not chat_enabled:
     st.info("Select a Section, enter Canvas Group Number, and select a Role in the sidebar to start chatting.")
 
 # ----------------------------
-# Chat input -> assistant -> autosave ALWAYS
+# Chat input -> assistant -> autosave ALWAYS (CSV)
 # Also: lock role after the first user message
 # ----------------------------
 if user_input := st.chat_input("Ask a Beer Game question...", disabled=not chat_enabled):
@@ -421,15 +327,13 @@ if user_input := st.chat_input("Ask a Beer Game question...", disabled=not chat_
     # Lock role after first user message (now that they started chatting)
     st.session_state["role_locked"] = True
 
-    # Generate assistant response
+    # Generate assistant response (plain text)
     try:
         role_aware_prompt = build_system_prompt(system_prompt, st.session_state["selected_role"])
-        assistant_payload = generate_assistant_payload(
+        assistant_text = generate_assistant_text(
             st.session_state["messages"],
             role_aware_prompt,
-            selected_mode,
         )
-        assistant_text = build_user_visible_reply(assistant_payload)
     except Exception as exc:
         st.error(str(exc))
         st.stop()
@@ -441,7 +345,6 @@ if user_input := st.chat_input("Ask a Beer Game question...", disabled=not chat_
         {
             "role": "assistant",
             "content": assistant_text,
-            "assistant_output": assistant_payload,
         }
     )
 
@@ -459,19 +362,3 @@ if user_input := st.chat_input("Ask a Beer Game question...", disabled=not chat_
         st.sidebar.error(f"Autosave failed: {save_error}")
     else:
         st.sidebar.caption(f"Autosaved: {saved_file}")
-
-    # Autosave structured JSON
-    structured_file, structured_error = save_structured_response_to_gcp(
-        assistant_payload,
-        selected_mode,
-        st.session_state["pid"].strip(),
-        st.session_state["selected_role"].strip(),
-        st.session_state["selected_section"].strip(),
-        user_input,
-    )
-    if structured_error == "missing_required_fields":
-        st.sidebar.warning("Missing fields for structured JSON upload.")
-    elif structured_error:
-        st.sidebar.error(f"Structured JSON upload failed: {structured_error}")
-    else:
-        st.sidebar.caption(f"Structured JSON uploaded: {structured_file}")
