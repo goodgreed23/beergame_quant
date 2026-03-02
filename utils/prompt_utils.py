@@ -13,7 +13,6 @@ GAME FACTS (course setting)
 - Physical shipping delays: 2 weeks on all links, EXCEPT Plant/Brewery → Factory is 1 week
 - Information delays: 2 weeks on all links, EXCEPT Factory → Plant/Brewery is 1 week
 - Starting inventory: 12 cases for each role
-- There is a steady demand of 4 cases each week, so the pipeline is fully loaded with 4 cases at every stage.
 
 RULES (always)
 - Do not suggest coordinating or messaging other roles.
@@ -65,118 +64,12 @@ QUALITATIVE_OUTPUT_INSTRUCTION = (
     "short_quantitative_reasoning and short_qualitative_reasoning are required and should each be concise (maximum 3 sentences)."
 )
 
-FACTORY_QUALITATIVE_MODE_EXAMPLE = """
-EXAMPLE (qualitative style priority)
-Input scenario:
-Role: Factory
-Week: 5
-Demand from Distributor: 5
-On Backorder: 0
-Beginning Inventory: 21
-Incoming Shipment: 9
-Units Shipped to Distributor this week: 5
-Ending Inventory: 25
-Last week’s order to the Brewery: 2
-
-Example JSON output (schema-conformant):
-{
-  "quantitative_reasoning": "Backorder is zero and inventory increased after incoming shipment exceeded shipped units, so demand is currently covered. A steady order equal to last week avoids overreaction while preserving service under delay.",
-  "qualitative_reasoning": "Hold steady relative to last week. With no backlog and inventory rising after a large incoming shipment, increasing now would likely add holding cost without improving service; keep changes small because delays make overreactions costly. If inventory keeps rising next week, decrease slightly; if backlog appears, increase.",
-  "short_quantitative_reasoning": "Inventory is building while backlog is absent, so a steady replenishment is sufficient for now.",
-  "short_qualitative_reasoning": "Hold steady now; adjust down only if stock keeps building and up only if backlog appears.",
-  "quantitative_answer": "2",
-  "qualitative_answer": "Hold steady relative to last week, with only small directional adjustments based on backlog and stock trend."
-}
-""".strip()
-
-RETAILER_QUALITATIVE_MODE_EXAMPLE = """
-EXAMPLE (qualitative style priority)
-Input scenario:
-Role: Retailer
-Week: 10
-Demand: 8
-On Backorder: 19
-Beginning Inventory: 0
-Incoming Shipment: 8
-Units Shipped this week: 3
-Last week’s order upstream (to your supplier): 14
-
-Example JSON output (schema-conformant):
-{
-  "quantitative_reasoning": "Backorder is high while effective on-hand availability is very tight, so service recovery requires adding supply in the pipeline. Because delivery delays can amplify swings, increase from last week but avoid an extreme jump to reduce overshoot risk.",
-  "qualitative_reasoning": "Increase relative to last week. You have a large backlog and little available stock, so catching up on service is the priority. Since deliveries arrive with delay, increase in a controlled way rather than making a huge jump; then refine using what is already in your pipeline.",
-  "short_quantitative_reasoning": "High backlog and depleted availability support a moderate increase above last week's order.",
-  "short_qualitative_reasoning": "Increase now to recover service, but keep the change controlled due to delays.",
-  "quantitative_answer": "16",
-  "qualitative_answer": "Increase relative to last week in a controlled step, then fine-tune with pipeline visibility."
-}
-""".strip()
-
-FACTORY_QUANTITATIVE_MODE_EXAMPLE = """
-EXAMPLE (quantitative style priority)
-Input scenario:
-Role: Factory
-Week: 5
-Demand from Distributor: 5
-On Backorder: 0
-Beginning Inventory: 21
-Incoming Shipment: 9
-Units Shipped to Distributor this week: 5
-Ending Inventory: 25
-Last week’s order to the Brewery: 2
-
-Example JSON output (schema-conformant):
-{
-  "quantitative_reasoning": "Backorder is zero and ending inventory is above a stable buffer after net inflow, so increasing order would likely raise holding cost. Keep order at last week level and reassess using next-week inventory and backlog movement.",
-  "qualitative_reasoning": "Order should stay steady because current supply is covering demand and stock is not under pressure. Increase only if backlog emerges; decrease if inventory continues to accumulate.",
-  "short_quantitative_reasoning": "No backlog and comfortable inventory imply no need to raise order now.",
-  "short_qualitative_reasoning": "Keep ordering steady this round and adjust with next-week signals.",
-  "quantitative_answer": "2",
-  "qualitative_answer": "Keep the order steady for now, then move up or down slightly based on backlog and inventory direction."
-}
-""".strip()
-
-RETAILER_QUANTITATIVE_MODE_EXAMPLE = """
-EXAMPLE (quantitative style priority)
-Input scenario:
-Role: Retailer
-Week: 10
-Demand: 8
-On Backorder: 19
-Beginning Inventory: 0
-Incoming Shipment: 8
-Units Shipped this week: 3
-Last week’s order upstream (to your supplier): 14
-
-Example JSON output (schema-conformant):
-{
-  "quantitative_reasoning": "Backorder remains elevated and shipped units are far below outstanding need, so additional upstream supply must be pulled forward. Given information and shipment delays, move above last week's order with a moderate step to improve fill rate while limiting later overstock risk.",
-  "qualitative_reasoning": "Order should be increased because unmet demand is large and current flow is insufficient to recover quickly. Raise in a measured way and adjust as delayed shipments arrive and backlog trend becomes clearer.",
-  "short_quantitative_reasoning": "Large backlog and weak fulfillment justify a controlled increase above last week's order.",
-  "short_qualitative_reasoning": "Increase now to close the service gap, but avoid overreaction.",
-  "quantitative_answer": "16",
-  "qualitative_answer": "Increase relative to last week with a controlled upward adjustment and reassess as pipeline arrives."
-}
-""".strip()
-
-QUALITATIVE_MODE_EXAMPLES = [
-    FACTORY_QUALITATIVE_MODE_EXAMPLE,
-    RETAILER_QUALITATIVE_MODE_EXAMPLE,
-]
-
-QUANTITATIVE_MODE_EXAMPLES = [
-    FACTORY_QUANTITATIVE_MODE_EXAMPLE,
-    RETAILER_QUANTITATIVE_MODE_EXAMPLE,
-]
-
 
 def build_structured_output_instruction(mode_key: str) -> str:
     if mode_key == "BeerGameQuantitative":
         mode_specific = "Mode emphasis: keep quantitative sections especially direct and calculation-first."
-        mode_examples = "\n\n".join(QUANTITATIVE_MODE_EXAMPLES)
     else:
         mode_specific = "Mode emphasis: keep qualitative sections especially clear, actionable, and non-technical."
-        mode_examples = "\n\n".join(QUALITATIVE_MODE_EXAMPLES)
 
     return " ".join(
         [
@@ -184,6 +77,5 @@ def build_structured_output_instruction(mode_key: str) -> str:
             QUANTITATIVE_OUTPUT_INSTRUCTION,
             QUALITATIVE_OUTPUT_INSTRUCTION,
             mode_specific,
-            mode_examples,
         ]
     )
