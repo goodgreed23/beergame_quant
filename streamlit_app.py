@@ -87,7 +87,7 @@ if "start_time" not in st.session_state:
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
-        {"role": "assistant", "content": "Hello, I am your Beer Game coach."}
+        {"role": "assistant", "content": "Hello, I am your Beer Game assistant."}
     ]
 
 if "selected_section" not in st.session_state:
@@ -128,17 +128,18 @@ def build_system_prompt(base_prompt: str, role: str) -> str:
 def build_welcome_message(role: str) -> str:
     role_text = role.strip()
     return (
-        f"You are the '{role_text}'. I will help you with making ordering decisions.\n\n"
+        f"You are the '{role_text}'. I can help you with making ordering decisions (you can always override). "
         "Please share the current week’s context including **Week, Demand, Inv/Bk (inventory or backlog), "
-        "Incoming shipment, Relevant recent orders**."
+        "Incoming shipment, Relevant recent orders**. "
     )
 
 
 def generate_assistant_text(messages_to_send, system_text: str) -> str:
     """
-    Plain, non-JSON call:
-    - system message includes your base + role guidance
-    - then we send the running chat history (user/assistant)
+    Plain API call (no JSON / no structured output).
+    Sends:
+      - system prompt (role-aware)
+      - chat history (user/assistant)
     """
     response_input = [{"role": "system", "content": system_text}]
     response_input.extend(
@@ -157,6 +158,7 @@ def generate_assistant_text(messages_to_send, system_text: str) -> str:
         if not text:
             raise RuntimeError("Empty response from model.")
         return text
+
     except BadRequestError:
         st.sidebar.warning(
             f"Model '{MODEL_SELECTED}' failed for this request. Retrying with '{FALLBACK_MODEL}'."
@@ -169,6 +171,7 @@ def generate_assistant_text(messages_to_send, system_text: str) -> str:
         if not text:
             raise RuntimeError("Empty response from fallback model.")
         return text
+
     except Exception as exc:
         raise RuntimeError(f"Assistant request failed: {exc}") from exc
 
@@ -330,9 +333,11 @@ if user_input := st.chat_input("Ask a Beer Game question...", disabled=not chat_
     # Generate assistant response (plain text)
     try:
         role_aware_prompt = build_system_prompt(system_prompt, st.session_state["selected_role"])
-        assistant_text = generate_assistant_text(
-            st.session_state["messages"],
-            role_aware_prompt,
+        
+        with st.spinner("Thinking… generating recommendation."):
+            assistant_text = generate_assistant_text(
+                st.session_state["messages"],
+                role_aware_prompt,
         )
     except Exception as exc:
         st.error(str(exc))
@@ -362,3 +367,12 @@ if user_input := st.chat_input("Ask a Beer Game question...", disabled=not chat_
         st.sidebar.error(f"Autosave failed: {save_error}")
     else:
         st.sidebar.caption(f"Autosaved: {saved_file}")
+
+
+
+
+
+
+
+
+
